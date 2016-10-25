@@ -55,21 +55,21 @@ func TestRoundTrip(t *testing.T) {
 		return
 	}
 	defer c1.Close()
-	assert.NoError(t, fdc.AssertDelta(3), "Dialing first connection should have added 2 file descriptors (one for each end of connection)")
+	assert.NoError(t, fdc.AssertDelta(3), "Dialing connection 1 should have added one underlying connection (one file descriptor for each end of connection)")
 
 	c2, err := dial("tcp", l.Addr().String())
 	if !assert.NoError(t, err) {
 		return
 	}
 	defer c2.Close()
-	assert.NoError(t, fdc.AssertDelta(5), "Dialing second connection should have added 2 more file descriptors")
+	assert.NoError(t, fdc.AssertDelta(5), "Dialing connection 2 should have added another underlying TCP connection")
 
 	c3, err := dial("tcp", l.Addr().String())
 	if !assert.NoError(t, err) {
 		return
 	}
 	defer c3.Close()
-	assert.NoError(t, fdc.AssertDelta(5), "Dialing third connection should not have added any file descriptors")
+	assert.NoError(t, fdc.AssertDelta(5), "Dialing connection 3 should not have added any underlying TCP connections")
 
 	_, err = c1.Write([]byte("c1"))
 	if !assert.NoError(t, err) {
@@ -100,4 +100,11 @@ func TestRoundTrip(t *testing.T) {
 		return
 	}
 	assert.Equal(t, "c1", string(buf))
+
+	c1.Close()
+	assert.NoError(t, fdc.AssertDelta(5), "Closing connection 1 should not have closed any underlying TCP connections")
+	c3.Close()
+	assert.NoError(t, fdc.AssertDelta(3), "Closing connection 3 should have closed one underlying TCP connection")
+	c2.Close()
+	assert.NoError(t, fdc.AssertDelta(1), "Closing connection 2 should have closed remaining underlying TCP connection")
 }

@@ -81,7 +81,11 @@ func (l *listener) handleConn(conn net.Conn) {
 			log.Errorf("Error creating multiplexed session: %v", err)
 			return
 		}
-		l.nextConn <- &cmconn{conn, stream}
+		l.nextConn <- &cmconn{
+			wrapped: conn,
+			stream:  stream,
+			onClose: noop,
+		}
 	}
 }
 
@@ -113,3 +117,5 @@ func (l *listener) Close() error {
 func (l *listener) Addr() net.Addr {
 	return l.wrapped.Addr()
 }
+
+func noop() {}

@@ -6,6 +6,7 @@ import (
 	"github.com/getlantern/golog"
 	"github.com/xtaci/smux"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -17,6 +18,9 @@ var (
 type cmconn struct {
 	wrapped net.Conn
 	stream  *smux.Stream
+	onClose func()
+	closed  bool
+	mx      sync.Mutex
 }
 
 func (c *cmconn) Read(b []byte) (n int, err error) {
@@ -28,7 +32,14 @@ func (c *cmconn) Write(b []byte) (n int, err error) {
 }
 
 func (c *cmconn) Close() error {
-	return c.stream.Close()
+	c.mx.Lock()
+	defer c.mx.Unlock()
+	if c.closed {
+		return nil
+	}
+	err := c.stream.Close()
+	c.onClose()
+	return err
 }
 
 func (c *cmconn) LocalAddr() net.Addr {
