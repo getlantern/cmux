@@ -48,7 +48,7 @@ func TestRoundTrip(t *testing.T) {
 		assert.NoError(t, fdc.AssertDelta(0), "After closing listener, there should be no lingering file descriptors")
 	}()
 
-	dial := Dialer(&DialerOpts{Dial: net.Dial})
+	dial := Dialer(&DialerOpts{Dial: net.Dial, PoolSize: 2})
 
 	c1, err := dial("tcp", l.Addr().String())
 	if !assert.NoError(t, err) {
@@ -62,13 +62,24 @@ func TestRoundTrip(t *testing.T) {
 		return
 	}
 	defer c2.Close()
-	assert.NoError(t, fdc.AssertDelta(3), "Dialing second connection should not have added any file descriptors")
+	assert.NoError(t, fdc.AssertDelta(5), "Dialing second connection should have added 2 more file descriptors")
+
+	c3, err := dial("tcp", l.Addr().String())
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer c3.Close()
+	assert.NoError(t, fdc.AssertDelta(5), "Dialing third connection should not have added any file descriptors")
 
 	_, err = c1.Write([]byte("c1"))
 	if !assert.NoError(t, err) {
 		return
 	}
 	_, err = c2.Write([]byte("c2"))
+	if !assert.NoError(t, err) {
+		return
+	}
+	_, err = c3.Write([]byte("c3"))
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -79,6 +90,11 @@ func TestRoundTrip(t *testing.T) {
 		return
 	}
 	assert.Equal(t, "c2", string(buf))
+	_, err = io.ReadFull(c3, buf)
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, "c3", string(buf))
 	_, err = io.ReadFull(c1, buf)
 	if !assert.NoError(t, err) {
 		return
