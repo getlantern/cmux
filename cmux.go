@@ -10,7 +10,8 @@ import (
 )
 
 var (
-	log = golog.LoggerFor("smuxconn")
+	log               = golog.LoggerFor("smuxconn")
+	defaultBufferSize = 4194304
 )
 
 type cmconn struct {

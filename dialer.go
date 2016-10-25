@@ -6,6 +6,7 @@ import (
 	"sync"
 )
 
+// DialFN is a function that dials like net.Dial.
 type DialFN func(network, addr string) (net.Conn, error)
 
 type DialerOpts struct {
@@ -13,9 +14,14 @@ type DialerOpts struct {
 	BufferSize int
 }
 
+// Dialer creates a DialFN that returns connections that multiplex themselves
+// over a single connection obtained from the underlying opts.Dial function.
+// It will continue to use that single connection until and unless it encounters
+// an error creating a new multiplexed stream, at which point it will dial
+// again.
 func Dialer(opts *DialerOpts) DialFN {
 	if opts.BufferSize <= 0 {
-		opts.BufferSize = 4194304
+		opts.BufferSize = defaultBufferSize
 	}
 	d := &dialer{dial: opts.Dial, bufferSize: opts.BufferSize, conns: make(map[string]*connAndSession)}
 	return d.Dial
