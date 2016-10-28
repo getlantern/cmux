@@ -39,6 +39,7 @@ func (c *cmconn) Close() error {
 	}
 	err := c.stream.Close()
 	c.onClose()
+	c.closed = true
 	return err
 }
 

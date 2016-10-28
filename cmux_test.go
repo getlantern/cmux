@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestRoundTrip(t *testing.T) {
@@ -107,4 +108,44 @@ func TestRoundTrip(t *testing.T) {
 	assert.NoError(t, fdc.AssertDelta(3), "Closing connection 3 should have closed one underlying TCP connection")
 	c2.Close()
 	assert.NoError(t, fdc.AssertDelta(1), "Closing connection 2 should have closed remaining underlying TCP connection")
+}
+
+func TestClose(t *testing.T) {
+	_l, err := net.Listen("tcp", "localhost:0")
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	l := Listen(&ListenOpts{Listener: _l})
+	_, fdc, err := fdcount.Matching("TCP")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a new connnection and close while trying to read and write
+	dial := Dialer(&DialerOpts{Dial: net.Dial, PoolSize: 1})
+	c, err := dial("tcp", l.Addr().String())
+	if !assert.NoError(t, err) {
+		return
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		b := make([]byte, 1024)
+		n, readErr := c.Read(b)
+		assert.Error(t, readErr)
+		assert.Equal(t, 0, n)
+		wg.Done()
+		log.Debug("Done")
+	}()
+	time.Sleep(250 * time.Millisecond)
+	c.Close()
+	log.Debug("Closed")
+	wg.Wait()
+	assert.NoError(t, fdc.AssertDelta(0), "No connections should remain open after closing connection")
+
+	b := make([]byte, 1024)
+	n, writeErr := c.Write(b)
+	assert.Error(t, writeErr)
+	assert.Equal(t, 0, n)
 }
