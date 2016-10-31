@@ -52,6 +52,9 @@ func (l *listener) listen() {
 }
 
 func (l *listener) handleConn(conn net.Conn) {
+	readDeadline := newDeadline(conn.SetReadDeadline)
+	writeDeadline := newDeadline(conn.SetWriteDeadline)
+
 	l.mx.Lock()
 	smuxConfig := smux.DefaultConfig()
 	smuxConfig.MaxReceiveBuffer = l.bufferSize
@@ -81,11 +84,7 @@ func (l *listener) handleConn(conn net.Conn) {
 			log.Errorf("Error creating multiplexed session: %v", err)
 			return
 		}
-		l.nextConn <- &cmconn{
-			wrapped: conn,
-			stream:  stream,
-			onClose: noop,
-		}
+		l.nextConn <- newConn(conn, readDeadline, writeDeadline, stream, nil)
 	}
 }
 
@@ -117,5 +116,3 @@ func (l *listener) Close() error {
 func (l *listener) Addr() net.Addr {
 	return l.wrapped.Addr()
 }
-
-func noop() {}

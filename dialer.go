@@ -95,11 +95,7 @@ func (d *dialer) Dial(network, addr string) (net.Conn, error) {
 		conns[idx] = cs
 	}
 
-	return &cmconn{
-		wrapped: cs.conn,
-		stream:  stream,
-		onClose: cs.closeIfNecessary,
-	}, nil
+	return newConn(cs.conn, newDeadline(cs.conn.SetReadDeadline), newDeadline(cs.conn.SetWriteDeadline), stream, cs.closeIfNecessary), nil
 }
 
 func (d *dialer) connect(network, addr string, idx int) (*connAndSession, error) {

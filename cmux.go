@@ -15,12 +15,29 @@ var (
 	defaultBufferSize = 4194304
 )
 
+func newConn(wrapped net.Conn, readDeadline *deadline, writeDeadline *deadline, stream *smux.Stream, onClose func()) *cmconn {
+	if onClose == nil {
+		onClose = noop
+	}
+	return &cmconn{
+		wrapped:       wrapped,
+		readDeadline:  readDeadline,
+		writeDeadline: writeDeadline,
+		stream:        stream,
+		onClose:       onClose,
+	}
+}
+
+func noop() {}
+
 type cmconn struct {
-	wrapped net.Conn
-	stream  *smux.Stream
-	onClose func()
-	closed  bool
-	mx      sync.Mutex
+	wrapped       net.Conn
+	readDeadline  *deadline
+	writeDeadline *deadline
+	stream        *smux.Stream
+	onClose       func()
+	closed        bool
+	mx            sync.Mutex
 }
 
 func (c *cmconn) Read(b []byte) (n int, err error) {
@@ -52,16 +69,17 @@ func (c *cmconn) RemoteAddr() net.Addr {
 }
 
 func (c *cmconn) SetDeadline(t time.Time) error {
-	// do nothing
-	return nil
+	err := c.SetReadDeadline(t)
+	if err != nil {
+		return err
+	}
+	return c.SetWriteDeadline(t)
 }
 
 func (c *cmconn) SetReadDeadline(t time.Time) error {
-	// do nothing
-	return nil
+	return c.readDeadline.set(c, t)
 }
 
 func (c *cmconn) SetWriteDeadline(t time.Time) error {
-	// do nothing
-	return nil
+	return c.writeDeadline.set(c, t)
 }
