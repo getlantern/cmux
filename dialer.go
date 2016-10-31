@@ -4,15 +4,24 @@ import (
 	"github.com/xtaci/smux"
 	"net"
 	"sync"
+	"time"
 )
 
 // DialFN is a function that dials like net.Dial.
 type DialFN func(network, addr string) (net.Conn, error)
 
 type DialerOpts struct {
-	Dial       DialFN
-	PoolSize   int
+	// Dial is a function that dials the underlying connections on top of which
+	// we multiplex.
+	Dial DialFN
+	// Setting a PoolSize greater than 1 will cuase cmux to multiplex over
+	// multiple underlying connections per destination.
+	PoolSize int
+	// BufferSize controls the size of read/write buffers (defaults to 4194304)
 	BufferSize int
+	// MinDeadline, if specified, limits how small of a read or write deadline one
+	// can set relative to now (defaults to 15 seconds).
+	MinDeadline time.Duration
 }
 
 type connAndSession struct {
@@ -25,8 +34,9 @@ type connAndSession struct {
 
 type dialer struct {
 	dial          DialFN
-	bufferSize    int
 	poolSize      int
+	bufferSize    int
+	minDeadline   time.Duration
 	currentConnID int
 	pool          map[string]map[int]*connAndSession
 	mx            sync.Mutex
@@ -44,11 +54,15 @@ func Dialer(opts *DialerOpts) DialFN {
 	if opts.BufferSize <= 0 {
 		opts.BufferSize = defaultBufferSize
 	}
+	if opts.MinDeadline <= 0 {
+		opts.MinDeadline = defaultMinDeadline
+	}
 	d := &dialer{
-		dial:       opts.Dial,
-		bufferSize: opts.BufferSize,
-		poolSize:   opts.PoolSize,
-		pool:       make(map[string]map[int]*connAndSession)}
+		dial:        opts.Dial,
+		poolSize:    opts.PoolSize,
+		bufferSize:  opts.BufferSize,
+		minDeadline: opts.MinDeadline,
+		pool:        make(map[string]map[int]*connAndSession)}
 	return d.Dial
 }
 
@@ -95,7 +109,7 @@ func (d *dialer) Dial(network, addr string) (net.Conn, error) {
 		conns[idx] = cs
 	}
 
-	return newConn(cs.conn, newDeadline(cs.conn.SetReadDeadline), newDeadline(cs.conn.SetWriteDeadline), stream, cs.closeIfNecessary), nil
+	return newConn(cs.conn, newDeadline(d.minDeadline, cs.conn.SetReadDeadline), newDeadline(d.minDeadline, cs.conn.SetWriteDeadline), stream, cs.closeIfNecessary), nil
 }
 
 func (d *dialer) connect(network, addr string, idx int) (*connAndSession, error) {

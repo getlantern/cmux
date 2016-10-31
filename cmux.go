@@ -11,8 +11,9 @@ import (
 )
 
 var (
-	log               = golog.LoggerFor("smuxconn")
-	defaultBufferSize = 4194304
+	log                = golog.LoggerFor("smuxconn")
+	defaultBufferSize  = 4194304
+	defaultMinDeadline = 15 * time.Second
 )
 
 func newConn(wrapped net.Conn, readDeadline *deadline, writeDeadline *deadline, stream *smux.Stream, onClose func()) *cmconn {

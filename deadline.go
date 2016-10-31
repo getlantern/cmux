@@ -15,14 +15,16 @@ var (
 // deadlines on underlying connections even multiplexing virtual connections
 // over them.
 type deadline struct {
+	min     time.Duration
 	current time.Time
 	owner   *cmconn
 	doSet   func(time.Time) error
 	mx      sync.Mutex
 }
 
-func newDeadline(doSet func(time.Time) error) *deadline {
+func newDeadline(min time.Duration, doSet func(time.Time) error) *deadline {
 	return &deadline{
+		min:     min,
 		current: maxDeadline,
 		owner:   nil,
 		doSet:   doSet,
@@ -31,6 +33,10 @@ func newDeadline(doSet func(time.Time) error) *deadline {
 
 func (d *deadline) set(by *cmconn, t time.Time) (err error) {
 	d.mx.Lock()
+	minDeadline := time.Now().Add(d.min)
+	if t.Before(minDeadline) {
+		t = minDeadline
+	}
 	if by == d.owner || t.Before(d.current) {
 		err = d.doSet(t)
 		d.current = t
