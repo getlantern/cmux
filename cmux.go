@@ -4,7 +4,7 @@ package cmux
 
 import (
 	"github.com/getlantern/golog"
-	"github.com/xtaci/smux"
+	"github.com/getlantern/smux"
 	"net"
 	"sync"
 	"time"
@@ -52,12 +52,15 @@ func (c *cmconn) RemoteAddr() net.Addr {
 }
 
 func (c *cmconn) SetDeadline(t time.Time) error {
-	// do nothing
-	return nil
+	err := c.SetReadDeadline(t)
+	if err != nil {
+		return err
+	}
+	return c.SetWriteDeadline(t)
 }
 
 func (c *cmconn) SetReadDeadline(t time.Time) error {
-	// do nothing
+	c.stream.SetReadDeadline(t)
 	return nil
 }
 
