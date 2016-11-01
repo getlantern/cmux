@@ -1,7 +1,7 @@
 package cmux
 
 import (
-	"github.com/getlantern/smux"
+	"github.com/xtaci/smux"
 	"net"
 	"sync"
 )
