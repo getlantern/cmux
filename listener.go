@@ -5,6 +5,8 @@ import (
 	"github.com/xtaci/smux"
 	"net"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 var (
@@ -17,14 +19,16 @@ type ListenOpts struct {
 }
 
 type listener struct {
-	wrapped       net.Listener
-	bufferSize    int
-	nextConn      chan net.Conn
-	nextErr       chan error
-	sessions      map[int]*smux.Session
-	nextSessionID int
-	closed        bool
-	mx            sync.Mutex
+	wrapped               net.Listener
+	bufferSize            int
+	nextConn              chan net.Conn
+	nextErr               chan error
+	sessions              map[int]*smux.Session
+	nextSessionID         int
+	closed                bool
+	numConnections        int64
+	numVirtualConnections int64
+	mx                    sync.Mutex
 }
 
 // Listen creates a net.Listener that multiplexes connections over a connection
@@ -41,6 +45,7 @@ func Listen(opts *ListenOpts) net.Listener {
 		sessions:   make(map[int]*smux.Session),
 	}
 	go l.listen()
+	go l.logStats()
 	return l
 }
 
@@ -53,6 +58,7 @@ func (l *listener) listen() {
 			l.nextErr <- err
 			return
 		}
+		atomic.AddInt64(&l.numConnections, 1)
 		go l.handleConn(conn)
 	}
 }
@@ -77,6 +83,7 @@ func (l *listener) handleConn(conn net.Conn) {
 		if !l.closed {
 			session.Close()
 			delete(l.sessions, sessionID)
+			atomic.AddInt64(&l.numConnections, -1)
 		}
 		l.mx.Unlock()
 	}()
@@ -87,10 +94,11 @@ func (l *listener) handleConn(conn net.Conn) {
 			log.Debugf("Error creating multiplexed session, probably just means that the underlying connection was closed: %v", err)
 			return
 		}
+		atomic.AddInt64(&l.numVirtualConnections, 1)
 		l.nextConn <- &cmconn{
 			wrapped: conn,
 			stream:  stream,
-			onClose: noop,
+			onClose: l.cmconnClosed,
 		}
 	}
 }
@@ -141,4 +149,19 @@ func (l *listener) Addr() net.Addr {
 	return l.wrapped.Addr()
 }
 
-func noop() {}
+func (l *listener) cmconnClosed() {
+	atomic.AddInt64(&l.numVirtualConnections, -1)
+}
+
+func (l *listener) logStats() {
+	for {
+		time.Sleep(15 * time.Second)
+		log.Debugf("Connections: %d   Virtual: %d", atomic.LoadInt64(&l.numConnections), atomic.LoadInt64(&l.numVirtualConnections))
+		l.mx.Lock()
+		closed := l.closed
+		l.mx.Unlock()
+		if closed {
+			return
+		}
+	}
+}
