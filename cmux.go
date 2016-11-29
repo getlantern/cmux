@@ -4,14 +4,14 @@ package cmux
 
 import (
 	"github.com/getlantern/golog"
-	"github.com/xtaci/smux"
+	"github.com/getlantern/smux"
 	"net"
 	"sync"
 	"time"
 )
 
 var (
-	log               = golog.LoggerFor("smuxconn")
+	log               = golog.LoggerFor("cmux")
 	defaultBufferSize = 4194304
 )
 

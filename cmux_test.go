@@ -1,13 +1,15 @@
 package cmux
 
 import (
-	"github.com/getlantern/fdcount"
-	"github.com/stretchr/testify/assert"
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/getlantern/fdcount"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestRoundTrip(t *testing.T) {
@@ -21,7 +23,7 @@ func TestRoundTrip(t *testing.T) {
 		return
 	}
 
-	l := Listen(&ListenOpts{Listener: _l})
+	l := Listen(&ListenOpts{Listener: _l}).(*listener)
 	assert.NoError(t, fdc.AssertDelta(1), "Starting listener should add only 1 file descriptor")
 
 	var wg sync.WaitGroup
@@ -35,9 +37,11 @@ func TestRoundTrip(t *testing.T) {
 				log.Error(acceptErr)
 				return
 			}
-			defer conn.Close()
 			// Start echoing
-			go io.Copy(conn, conn)
+			go func() {
+				io.Copy(conn, conn)
+				conn.Close()
+			}()
 		}
 	}()
 
@@ -57,6 +61,8 @@ func TestRoundTrip(t *testing.T) {
 	}
 	defer c1.Close()
 	assert.NoError(t, fdc.AssertDelta(3), "Dialing connection 1 should have added one underlying connection (one file descriptor for each end of connection)")
+	assert.EqualValues(t, 1, atomic.LoadInt64(&l.numConnections))
+	assert.EqualValues(t, 1, atomic.LoadInt64(&l.numVirtualConnections))
 
 	c2, err := dial("tcp", l.Addr().String())
 	if !assert.NoError(t, err) {
@@ -64,6 +70,8 @@ func TestRoundTrip(t *testing.T) {
 	}
 	defer c2.Close()
 	assert.NoError(t, fdc.AssertDelta(5), "Dialing connection 2 should have added another underlying TCP connection")
+	assert.EqualValues(t, 2, atomic.LoadInt64(&l.numConnections))
+	assert.EqualValues(t, 2, atomic.LoadInt64(&l.numVirtualConnections))
 
 	c3, err := dial("tcp", l.Addr().String())
 	if !assert.NoError(t, err) {
@@ -71,6 +79,8 @@ func TestRoundTrip(t *testing.T) {
 	}
 	defer c3.Close()
 	assert.NoError(t, fdc.AssertDelta(5), "Dialing connection 3 should not have added any underlying TCP connections")
+	assert.EqualValues(t, 2, atomic.LoadInt64(&l.numConnections))
+	assert.EqualValues(t, 3, atomic.LoadInt64(&l.numVirtualConnections))
 
 	_, err = c1.Write([]byte("c1"))
 	if !assert.NoError(t, err) {
@@ -104,10 +114,18 @@ func TestRoundTrip(t *testing.T) {
 
 	c1.Close()
 	assert.NoError(t, fdc.AssertDelta(5), "Closing connection 1 should not have closed any underlying TCP connections")
+	assert.EqualValues(t, 2, atomic.LoadInt64(&l.numConnections))
+	assert.EqualValues(t, 2, atomic.LoadInt64(&l.numVirtualConnections))
+
 	c3.Close()
 	assert.NoError(t, fdc.AssertDelta(3), "Closing connection 3 should have closed one underlying TCP connection")
+	assert.EqualValues(t, 1, atomic.LoadInt64(&l.numConnections))
+	assert.EqualValues(t, 1, atomic.LoadInt64(&l.numVirtualConnections))
+
 	c2.Close()
 	assert.NoError(t, fdc.AssertDelta(1), "Closing connection 2 should have closed remaining underlying TCP connection")
+	assert.EqualValues(t, 0, atomic.LoadInt64(&l.numConnections))
+	assert.EqualValues(t, 0, atomic.LoadInt64(&l.numVirtualConnections))
 }
 
 func TestClose(t *testing.T) {
