@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	log               = golog.LoggerFor("smuxconn")
+	log               = golog.LoggerFor("cmux")
 	defaultBufferSize = 4194304
 )
 
