@@ -37,9 +37,11 @@ func TestRoundTrip(t *testing.T) {
 				log.Error(acceptErr)
 				return
 			}
-			defer conn.Close()
 			// Start echoing
-			go io.Copy(conn, conn)
+			go func() {
+				io.Copy(conn, conn)
+				conn.Close()
+			}()
 		}
 	}()
 
