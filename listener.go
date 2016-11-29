@@ -2,7 +2,7 @@ package cmux
 
 import (
 	"errors"
-	"github.com/xtaci/smux"
+	"github.com/getlantern/smux"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -80,12 +80,13 @@ func (l *listener) handleConn(conn net.Conn) {
 
 	defer func() {
 		l.mx.Lock()
-		if !l.closed {
+		closed := l.closed
+		l.mx.Unlock()
+		if !closed {
 			session.Close()
 			delete(l.sessions, sessionID)
 			atomic.AddInt64(&l.numConnections, -1)
 		}
-		l.mx.Unlock()
 	}()
 
 	for {
@@ -120,16 +121,20 @@ func (l *listener) Accept() (net.Conn, error) {
 
 func (l *listener) Close() error {
 	l.mx.Lock()
-	defer l.mx.Unlock()
 	if l.closed {
+		l.mx.Unlock()
 		return nil
 	}
+	sessions := make([]*smux.Session, 0, len(l.sessions))
 	for _, session := range l.sessions {
+		sessions = append(sessions, session)
+	}
+	l.closed = true
+	l.mx.Unlock()
+	err := l.wrapped.Close()
+	for _, session := range sessions {
 		session.Close()
 	}
-	l.sessions = nil
-	err := l.wrapped.Close()
-	l.closed = true
 	// Drain nextConn and nextErr
 drain:
 	for {
@@ -154,7 +159,7 @@ func (l *listener) cmconnClosed() {
 
 func (l *listener) logStats() {
 	for {
-		time.Sleep(15 * time.Second)
+		time.Sleep(5 * time.Second)
 		log.Debugf("Connections: %d   Virtual: %d", atomic.LoadInt64(&l.numConnections), atomic.LoadInt64(&l.numVirtualConnections))
 		l.mx.Lock()
 		closed := l.closed
