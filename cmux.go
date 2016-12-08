@@ -4,7 +4,7 @@ package cmux
 
 import (
 	"github.com/getlantern/golog"
-	"github.com/xtaci/smux"
+	"github.com/getlantern/smux"
 	"net"
 	"sync"
 	"time"

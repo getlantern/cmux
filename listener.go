@@ -2,7 +2,7 @@ package cmux
 
 import (
 	"errors"
-	"github.com/xtaci/smux"
+	"github.com/getlantern/smux"
 	"net"
 	"sync"
 	"sync/atomic"
