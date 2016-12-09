@@ -4,6 +4,8 @@ import (
 	"github.com/getlantern/smux"
 	"net"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 // DialFN is a function that dials like net.Dial.
@@ -24,12 +26,14 @@ type connAndSession struct {
 }
 
 type dialer struct {
-	dial          DialFN
-	bufferSize    int
-	poolSize      int
-	currentConnID int
-	pool          map[string]map[int]*connAndSession
-	mx            sync.Mutex
+	dial                  DialFN
+	bufferSize            int
+	poolSize              int
+	currentConnID         int
+	pool                  map[string]map[int]*connAndSession
+	numConnections        int64
+	numVirtualConnections int64
+	mx                    sync.Mutex
 }
 
 // Dialer creates a DialFN that returns connections that multiplex themselves
@@ -49,6 +53,7 @@ func Dialer(opts *DialerOpts) DialFN {
 		bufferSize: opts.BufferSize,
 		poolSize:   opts.PoolSize,
 		pool:       make(map[string]map[int]*connAndSession)}
+	go d.logStats()
 	return d.Dial
 }
 
@@ -78,11 +83,13 @@ func (d *dialer) Dial(network, addr string) (net.Conn, error) {
 			return nil, err
 		}
 		conns[idx] = cs
+		atomic.AddInt64(&d.numConnections, 1)
 	}
 
 	// Open stream
 	stream, err := cs.session.OpenStream()
 	if err != nil {
+		log.Debug("Reconnecting")
 		// Reconnect and try again
 		cs, err := d.connect(network, addr, idx)
 		if err != nil {
@@ -94,6 +101,7 @@ func (d *dialer) Dial(network, addr string) (net.Conn, error) {
 		}
 		conns[idx] = cs
 	}
+	atomic.AddInt64(&d.numVirtualConnections, 1)
 
 	return &cmconn{
 		wrapped: cs.conn,
@@ -123,6 +131,9 @@ func (d *dialer) connect(network, addr string, idx int) (*connAndSession, error)
 }
 
 func (cs *connAndSession) closeIfNecessary() {
+	cs.dialer.mx.Lock()
+	defer cs.dialer.mx.Unlock()
+	atomic.AddInt64(&cs.dialer.numVirtualConnections, -1)
 	if cs.session.NumStreams() == 0 {
 		// Closing session also closes connection
 		cs.session.Close()
@@ -131,13 +142,23 @@ func (cs *connAndSession) closeIfNecessary() {
 }
 
 func (d *dialer) removeFromPool(addr string, idx int) {
-	d.mx.Lock()
-	defer d.mx.Unlock()
 	conns := d.pool[addr]
 	if conns != nil {
-		delete(conns, idx)
+		if conns[idx] != nil {
+			delete(conns, idx)
+			atomic.AddInt64(&d.numConnections, -1)
+		}
 		if len(conns) == 0 {
 			delete(d.pool, addr)
 		}
+	}
+}
+
+func (d *dialer) logStats() {
+	for {
+		time.Sleep(5 * time.Second)
+		log.Debugf("Connections: %d   Virtual: %d", atomic.LoadInt64(&d.numConnections), atomic.LoadInt64(&d.numVirtualConnections))
+		d.mx.Lock()
+		d.mx.Unlock()
 	}
 }
