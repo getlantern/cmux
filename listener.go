@@ -2,7 +2,7 @@ package cmux
 
 import (
 	"errors"
-	"github.com/xtaci/smux"
+	"github.com/getlantern/smux"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -79,14 +79,12 @@ func (l *listener) handleConn(conn net.Conn) {
 	l.mx.Unlock()
 
 	defer func() {
+		session.Close()
+		conn.Close()
 		l.mx.Lock()
-		closed := l.closed
+		delete(l.sessions, sessionID)
 		l.mx.Unlock()
-		if !closed {
-			session.Close()
-			delete(l.sessions, sessionID)
-			atomic.AddInt64(&l.numConnections, -1)
-		}
+		atomic.AddInt64(&l.numConnections, -1)
 	}()
 
 	for {
@@ -121,25 +119,21 @@ func (l *listener) Accept() (net.Conn, error) {
 
 func (l *listener) Close() error {
 	l.mx.Lock()
+	defer l.mx.Unlock()
 	if l.closed {
-		l.mx.Unlock()
 		return nil
 	}
-	sessions := make([]*smux.Session, 0, len(l.sessions))
 	for _, session := range l.sessions {
-		sessions = append(sessions, session)
-	}
-	l.closed = true
-	l.mx.Unlock()
-	err := l.wrapped.Close()
-	for _, session := range sessions {
 		session.Close()
 	}
+	l.closed = true
+	err := l.wrapped.Close()
 	// Drain nextConn and nextErr
 drain:
 	for {
 		select {
-		case <-l.nextConn:
+		case conn := <-l.nextConn:
+			conn.Close()
 		case <-l.nextErr:
 		default:
 			break drain
@@ -165,6 +159,7 @@ func (l *listener) logStats() {
 		closed := l.closed
 		l.mx.Unlock()
 		if closed {
+			log.Debug("Done logging stats")
 			return
 		}
 	}
