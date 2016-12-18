@@ -1,7 +1,7 @@
 package cmux
 
 import (
-	"github.com/getlantern/smux"
+	"github.com/whyrusleeping/yamux"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -12,14 +12,13 @@ import (
 type DialFN func(network, addr string) (net.Conn, error)
 
 type DialerOpts struct {
-	Dial       DialFN
-	PoolSize   int
-	BufferSize int
+	Dial     DialFN
+	PoolSize int
 }
 
 type connAndSession struct {
 	conn    net.Conn
-	session *smux.Session
+	session *yamux.Session
 	dialer  *dialer
 	addr    string
 	idx     int
@@ -27,7 +26,6 @@ type connAndSession struct {
 
 type dialer struct {
 	dial                  DialFN
-	bufferSize            int
 	poolSize              int
 	currentConnID         int
 	pool                  map[string]map[int]*connAndSession
@@ -45,14 +43,10 @@ func Dialer(opts *DialerOpts) DialFN {
 	if opts.PoolSize < 1 {
 		opts.PoolSize = 1
 	}
-	if opts.BufferSize <= 0 {
-		opts.BufferSize = defaultBufferSize
-	}
 	d := &dialer{
-		dial:       opts.Dial,
-		bufferSize: opts.BufferSize,
-		poolSize:   opts.PoolSize,
-		pool:       make(map[string]map[int]*connAndSession)}
+		dial:     opts.Dial,
+		poolSize: opts.PoolSize,
+		pool:     make(map[string]map[int]*connAndSession)}
 	go d.logStats()
 	return d.Dial
 }
@@ -89,6 +83,7 @@ func (d *dialer) Dial(network, addr string) (net.Conn, error) {
 	// Open stream
 	stream, err := cs.session.OpenStream()
 	if err != nil {
+		stream.Close()
 		log.Debug("Reconnecting")
 		// Reconnect and try again
 		cs, err := d.connect(network, addr, idx)
@@ -115,9 +110,8 @@ func (d *dialer) connect(network, addr string, idx int) (*connAndSession, error)
 	if err != nil {
 		return nil, err
 	}
-	smuxConfig := smux.DefaultConfig()
-	smuxConfig.MaxReceiveBuffer = d.bufferSize
-	session, err := smux.Client(conn, smuxConfig)
+	config := yamux.DefaultConfig()
+	session, err := yamux.Client(conn, config)
 	if err != nil {
 		return nil, err
 	}
@@ -131,9 +125,9 @@ func (d *dialer) connect(network, addr string, idx int) (*connAndSession, error)
 }
 
 func (cs *connAndSession) closeIfNecessary() {
+	atomic.AddInt64(&cs.dialer.numVirtualConnections, -1)
 	cs.dialer.mx.Lock()
 	defer cs.dialer.mx.Unlock()
-	atomic.AddInt64(&cs.dialer.numVirtualConnections, -1)
 	if cs.session.NumStreams() == 0 {
 		// Closing session also closes connection
 		cs.session.Close()

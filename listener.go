@@ -2,7 +2,7 @@ package cmux
 
 import (
 	"errors"
-	"github.com/getlantern/smux"
+	"github.com/whyrusleeping/yamux"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -20,10 +20,9 @@ type ListenOpts struct {
 
 type listener struct {
 	wrapped               net.Listener
-	bufferSize            int
 	nextConn              chan net.Conn
 	nextErr               chan error
-	sessions              map[int]*smux.Session
+	sessions              map[int]*yamux.Session
 	nextSessionID         int
 	closed                bool
 	numConnections        int64
@@ -34,15 +33,11 @@ type listener struct {
 // Listen creates a net.Listener that multiplexes connections over a connection
 // obtained from the underlying opts.Listener.
 func Listen(opts *ListenOpts) net.Listener {
-	if opts.BufferSize <= 0 {
-		opts.BufferSize = defaultBufferSize
-	}
 	l := &listener{
-		wrapped:    opts.Listener,
-		bufferSize: opts.BufferSize,
-		nextConn:   make(chan net.Conn, 1),
-		nextErr:    make(chan error, 1),
-		sessions:   make(map[int]*smux.Session),
+		wrapped:  opts.Listener,
+		nextConn: make(chan net.Conn, 1),
+		nextErr:  make(chan error, 1),
+		sessions: make(map[int]*yamux.Session),
 	}
 	go l.listen()
 	go l.logStats()
@@ -65,9 +60,8 @@ func (l *listener) listen() {
 
 func (l *listener) handleConn(conn net.Conn) {
 	l.mx.Lock()
-	smuxConfig := smux.DefaultConfig()
-	smuxConfig.MaxReceiveBuffer = l.bufferSize
-	session, err := smux.Server(conn, smuxConfig)
+	config := yamux.DefaultConfig()
+	session, err := yamux.Server(conn, config)
 	if err != nil {
 		l.nextErr <- err
 		l.mx.Unlock()

@@ -4,23 +4,21 @@ package cmux
 
 import (
 	"github.com/getlantern/golog"
-	"github.com/getlantern/smux"
+	"github.com/whyrusleeping/yamux"
 	"net"
-	"sync"
+	"sync/atomic"
 	"time"
 )
 
 var (
-	log               = golog.LoggerFor("cmux")
-	defaultBufferSize = 4194304
+	log = golog.LoggerFor("cmux")
 )
 
 type cmconn struct {
 	wrapped net.Conn
-	stream  *smux.Stream
+	stream  *yamux.Stream
 	onClose func()
-	closed  bool
-	mx      sync.Mutex
+	closed  int32
 }
 
 func (c *cmconn) Read(b []byte) (n int, err error) {
@@ -32,14 +30,11 @@ func (c *cmconn) Write(b []byte) (n int, err error) {
 }
 
 func (c *cmconn) Close() error {
-	c.mx.Lock()
-	defer c.mx.Unlock()
-	if c.closed {
+	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
 		return nil
 	}
 	err := c.stream.Close()
 	c.onClose()
-	c.closed = true
 	return err
 }
 
