@@ -1,6 +1,7 @@
 package cmux
 
 import (
+	"context"
 	"io"
 	"net"
 	"sync"
@@ -53,18 +54,21 @@ func TestRoundTrip(t *testing.T) {
 		assert.NoError(t, fdc.AssertDelta(0), "After closing listener, there should be no lingering file descriptors")
 	}()
 
-	dial := Dialer(&DialerOpts{Dial: net.Dial, PoolSize: 2})
+	dialer := &net.Dialer{}
+	dial := Dialer(&DialerOpts{Dial: dialer.DialContext, PoolSize: 2})
 
-	c1, err := dial("tcp", l.Addr().String())
+	log.Debug("1")
+	c1, err := dial(context.Background(), "tcp", l.Addr().String())
 	if !assert.NoError(t, err) {
 		return
 	}
 	defer c1.Close()
+	log.Debug("2")
 	assert.NoError(t, fdc.AssertDelta(3), "Dialing connection 1 should have added one underlying connection (one file descriptor for each end of connection)")
 	assert.EqualValues(t, 1, atomic.LoadInt64(&l.numConnections))
 	assert.EqualValues(t, 1, atomic.LoadInt64(&l.numVirtualConnections))
 
-	c2, err := dial("tcp", l.Addr().String())
+	c2, err := dial(context.Background(), "tcp", l.Addr().String())
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -73,7 +77,7 @@ func TestRoundTrip(t *testing.T) {
 	assert.EqualValues(t, 2, atomic.LoadInt64(&l.numConnections))
 	assert.EqualValues(t, 2, atomic.LoadInt64(&l.numVirtualConnections))
 
-	c3, err := dial("tcp", l.Addr().String())
+	c3, err := dial(context.Background(), "tcp", l.Addr().String())
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -141,8 +145,9 @@ func TestClose(t *testing.T) {
 	}
 
 	// Create a new connnection and close while trying to read and write
-	dial := Dialer(&DialerOpts{Dial: net.Dial, PoolSize: 1})
-	c, err := dial("tcp", l.Addr().String())
+	dialer := &net.Dialer{}
+	dial := Dialer(&DialerOpts{Dial: dialer.DialContext, PoolSize: 1})
+	c, err := dial(context.Background(), "tcp", l.Addr().String())
 	if !assert.NoError(t, err) {
 		return
 	}

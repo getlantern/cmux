@@ -2,11 +2,12 @@ package cmux
 
 import (
 	"errors"
-	"github.com/getlantern/smux"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/xtaci/smux"
 )
 
 var (
@@ -14,13 +15,13 @@ var (
 )
 
 type ListenOpts struct {
-	Listener   net.Listener
-	BufferSize int
+	Listener          net.Listener
+	BufferSize        int
+	KeepAliveInterval time.Duration
 }
 
 type listener struct {
-	wrapped               net.Listener
-	bufferSize            int
+	ListenOpts
 	nextConn              chan net.Conn
 	nextErr               chan error
 	sessions              map[int]*smux.Session
@@ -38,8 +39,7 @@ func Listen(opts *ListenOpts) net.Listener {
 		opts.BufferSize = defaultBufferSize
 	}
 	l := &listener{
-		wrapped:    opts.Listener,
-		bufferSize: opts.BufferSize,
+		ListenOpts: *opts,
 		nextConn:   make(chan net.Conn, 1),
 		nextErr:    make(chan error, 1),
 		sessions:   make(map[int]*smux.Session),
@@ -53,7 +53,7 @@ func (l *listener) listen() {
 	defer l.Close()
 	defer close(l.nextErr)
 	for {
-		conn, err := l.wrapped.Accept()
+		conn, err := l.Listener.Accept()
 		if err != nil {
 			l.nextErr <- err
 			return
@@ -66,7 +66,10 @@ func (l *listener) listen() {
 func (l *listener) handleConn(conn net.Conn) {
 	l.mx.Lock()
 	smuxConfig := smux.DefaultConfig()
-	smuxConfig.MaxReceiveBuffer = l.bufferSize
+	smuxConfig.MaxReceiveBuffer = l.BufferSize
+	if l.KeepAliveInterval > 0 {
+		smuxConfig.KeepAliveInterval = l.KeepAliveInterval
+	}
 	session, err := smux.Server(conn, smuxConfig)
 	if err != nil {
 		l.nextErr <- err
@@ -95,8 +98,7 @@ func (l *listener) handleConn(conn net.Conn) {
 		}
 		atomic.AddInt64(&l.numVirtualConnections, 1)
 		l.nextConn <- &cmconn{
-			wrapped: conn,
-			stream:  stream,
+			Conn:    stream,
 			onClose: l.cmconnClosed,
 		}
 	}
@@ -124,10 +126,13 @@ func (l *listener) Close() error {
 		return nil
 	}
 	for _, session := range l.sessions {
-		session.Close()
+		closeErr := session.Close()
+		if closeErr != nil {
+			log.Errorf("Error closing session: %v", closeErr)
+		}
 	}
 	l.closed = true
-	err := l.wrapped.Close()
+	err := l.Listener.Close()
 	// Drain nextConn and nextErr
 drain:
 	for {
@@ -144,11 +149,11 @@ drain:
 }
 
 func (l *listener) Addr() net.Addr {
-	return l.wrapped.Addr()
+	return l.Listener.Addr()
 }
 
 func (l *listener) cmconnClosed() {
-	atomic.AddInt64(&l.numVirtualConnections, -1)
+	log.Debugf("Remaining virtual connections: %d", atomic.AddInt64(&l.numVirtualConnections, -1))
 }
 
 func (l *listener) logStats() {
