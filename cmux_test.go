@@ -2,6 +2,7 @@ package cmux
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"net"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/getlantern/fdcount"
+	"github.com/getlantern/keyman"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -19,7 +21,16 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_l, err := net.Listen("tcp", "localhost:0")
+	pk, err := keyman.GeneratePK(2048)
+	if !assert.NoError(t, err) {
+		return
+	}
+	cert, err := pk.TLSCertificateFor(time.Now().Add(365*24*time.Hour), true, nil, "cmux", "127.0.0.1")
+	keypair, err := tls.X509KeyPair(cert.PEMEncoded(), pk.PEMEncoded())
+
+	_l, err := tls.Listen("tcp", "localhost:0", &tls.Config{
+		Certificates: []tls.Certificate{keypair},
+	})
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -54,8 +65,11 @@ func TestRoundTrip(t *testing.T) {
 		assert.NoError(t, fdc.AssertDelta(0), "After closing listener, there should be no lingering file descriptors")
 	}()
 
-	dialer := &net.Dialer{}
-	dial := Dialer(&DialerOpts{Dial: dialer.DialContext, PoolSize: 2})
+	dial := Dialer(&DialerOpts{Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return tls.Dial(network, addr, &tls.Config{
+			RootCAs: cert.PoolContainingCert(),
+		})
+	}, PoolSize: 2})
 
 	log.Debug("1")
 	c1, err := dial(context.Background(), "tcp", l.Addr().String())

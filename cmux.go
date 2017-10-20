@@ -27,7 +27,6 @@ func (c *cmconn) Close() error {
 	if c.closed {
 		return nil
 	}
-	log.Debug("Closing conn")
 	err := c.Conn.Close()
 	c.onClose()
 	c.closed = true
