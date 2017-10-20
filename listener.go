@@ -40,7 +40,7 @@ func Listen(opts *ListenOpts) net.Listener {
 	}
 	l := &listener{
 		ListenOpts: *opts,
-		nextConn:   make(chan net.Conn, 1),
+		nextConn:   make(chan net.Conn, 1000),
 		nextErr:    make(chan error, 1),
 		sessions:   make(map[int]*smux.Session),
 	}
@@ -153,7 +153,7 @@ func (l *listener) Addr() net.Addr {
 }
 
 func (l *listener) cmconnClosed() {
-	log.Debugf("Remaining virtual connections: %d", atomic.AddInt64(&l.numVirtualConnections, -1))
+	atomic.AddInt64(&l.numVirtualConnections, -1)
 }
 
 func (l *listener) logStats() {

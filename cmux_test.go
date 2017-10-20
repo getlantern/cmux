@@ -71,13 +71,11 @@ func TestRoundTrip(t *testing.T) {
 		})
 	}, PoolSize: 2})
 
-	log.Debug("1")
 	c1, err := dial(context.Background(), "tcp", l.Addr().String())
 	if !assert.NoError(t, err) {
 		return
 	}
 	defer c1.Close()
-	log.Debug("2")
 	assert.NoError(t, fdc.AssertDelta(3), "Dialing connection 1 should have added one underlying connection (one file descriptor for each end of connection)")
 	assert.EqualValues(t, 1, atomic.LoadInt64(&l.numConnections))
 	assert.EqualValues(t, 1, atomic.LoadInt64(&l.numVirtualConnections))
