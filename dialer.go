@@ -1,18 +1,22 @@
 package cmux
 
 import (
-	"github.com/getlantern/smux"
+	"context"
 	"net"
 	"sync"
+	"time"
+
+	"github.com/xtaci/smux"
 )
 
-// DialFN is a function that dials like net.Dial.
-type DialFN func(network, addr string) (net.Conn, error)
+// DialFN is a function that dials like net.DialContext.
+type DialFN func(ctx context.Context, network, addr string) (net.Conn, error)
 
 type DialerOpts struct {
-	Dial       DialFN
-	PoolSize   int
-	BufferSize int
+	Dial              DialFN
+	PoolSize          int
+	BufferSize        int
+	KeepAliveInterval time.Duration
 }
 
 type connAndSession struct {
@@ -24,9 +28,7 @@ type connAndSession struct {
 }
 
 type dialer struct {
-	dial          DialFN
-	bufferSize    int
-	poolSize      int
+	DialerOpts
 	currentConnID int
 	pool          map[string]map[int]*connAndSession
 	mx            sync.Mutex
@@ -45,18 +47,16 @@ func Dialer(opts *DialerOpts) DialFN {
 		opts.BufferSize = defaultBufferSize
 	}
 	d := &dialer{
-		dial:       opts.Dial,
-		bufferSize: opts.BufferSize,
-		poolSize:   opts.PoolSize,
+		DialerOpts: *opts,
 		pool:       make(map[string]map[int]*connAndSession)}
 	return d.Dial
 }
 
-func (d *dialer) Dial(network, addr string) (net.Conn, error) {
+func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, error) {
 	d.mx.Lock()
 	defer d.mx.Unlock()
 
-	idx := d.currentConnID % d.poolSize
+	idx := d.currentConnID % d.PoolSize
 	d.currentConnID++
 
 	var cs *connAndSession
@@ -64,7 +64,7 @@ func (d *dialer) Dial(network, addr string) (net.Conn, error) {
 	// Create pool if necessary
 	conns := d.pool[addr]
 	if conns == nil {
-		conns = make(map[int]*connAndSession, d.poolSize)
+		conns = make(map[int]*connAndSession, d.PoolSize)
 		d.pool[addr] = conns
 	} else {
 		cs = conns[idx]
@@ -73,7 +73,7 @@ func (d *dialer) Dial(network, addr string) (net.Conn, error) {
 	// Create conn if necessary
 	if cs == nil {
 		var err error
-		cs, err = d.connect(network, addr, idx)
+		cs, err = d.connect(ctx, network, addr, idx)
 		if err != nil {
 			return nil, err
 		}
@@ -84,7 +84,7 @@ func (d *dialer) Dial(network, addr string) (net.Conn, error) {
 	stream, err := cs.session.OpenStream()
 	if err != nil {
 		// Reconnect and try again
-		cs, err := d.connect(network, addr, idx)
+		cs, err := d.connect(ctx, network, addr, idx)
 		if err != nil {
 			return nil, err
 		}
@@ -96,19 +96,21 @@ func (d *dialer) Dial(network, addr string) (net.Conn, error) {
 	}
 
 	return &cmconn{
-		wrapped: cs.conn,
-		stream:  stream,
+		Conn:    stream,
 		onClose: cs.closeIfNecessary,
 	}, nil
 }
 
-func (d *dialer) connect(network, addr string, idx int) (*connAndSession, error) {
-	conn, err := d.dial(network, addr)
+func (d *dialer) connect(ctx context.Context, network, addr string, idx int) (*connAndSession, error) {
+	conn, err := d.DialerOpts.Dial(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
 	smuxConfig := smux.DefaultConfig()
-	smuxConfig.MaxReceiveBuffer = d.bufferSize
+	smuxConfig.MaxReceiveBuffer = d.BufferSize
+	if d.KeepAliveInterval > 0 {
+		smuxConfig.KeepAliveInterval = d.KeepAliveInterval
+	}
 	session, err := smux.Client(conn, smuxConfig)
 	if err != nil {
 		return nil, err
