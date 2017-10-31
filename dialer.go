@@ -53,22 +53,7 @@ func Dialer(opts *DialerOpts) DialFN {
 }
 
 func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, error) {
-	d.mx.Lock()
-	defer d.mx.Unlock()
-
-	idx := d.currentConnID % d.PoolSize
-	d.currentConnID++
-
-	var cs *connAndSession
-
-	// Create pool if necessary
-	conns := d.pool[addr]
-	if conns == nil {
-		conns = make(map[int]*connAndSession, d.PoolSize)
-		d.pool[addr] = conns
-	} else {
-		cs = conns[idx]
-	}
+	cs, idx := d.csFromPool(addr)
 
 	// Create conn if necessary
 	if cs == nil {
@@ -77,14 +62,13 @@ func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, erro
 		if err != nil {
 			return nil, err
 		}
-		conns[idx] = cs
 	}
 
 	// Open stream
 	stream, err := cs.session.OpenStream()
 	if err != nil {
 		// Reconnect and try again
-		cs, err := d.connect(ctx, network, addr, idx)
+		cs, err = d.connect(ctx, network, addr, idx)
 		if err != nil {
 			return nil, err
 		}
@@ -92,13 +76,37 @@ func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, erro
 		if err != nil {
 			return nil, err
 		}
-		conns[idx] = cs
 	}
+
+	d.csToPool(cs, addr, idx)
 
 	return &cmconn{
 		Conn:    stream,
 		onClose: cs.closeIfNecessary,
 	}, nil
+}
+
+func (d *dialer) csFromPool(addr string) (*connAndSession, int) {
+	d.mx.Lock()
+	defer d.mx.Unlock()
+
+	idx := d.currentConnID % d.PoolSize
+	d.currentConnID++
+	// Create pool if necessary
+	conns := d.pool[addr]
+	if conns == nil {
+		conns = make(map[int]*connAndSession, d.PoolSize)
+		d.pool[addr] = conns
+		return nil, idx
+	} else {
+		return conns[idx], idx
+	}
+}
+
+func (d *dialer) csToPool(cs *connAndSession, addr string, idx int) {
+	d.mx.Lock()
+	d.pool[addr][idx] = cs
+	d.mx.Unlock()
 }
 
 func (d *dialer) connect(ctx context.Context, network, addr string, idx int) (*connAndSession, error) {
