@@ -10,10 +10,10 @@ import (
 )
 
 // DialFN is a function that dials like net.DialContext.
-type DialFN func(ctx context.Context, network, addr string) (net.Conn, error)
+type DialFN func(ctx context.Context, network, addr string) (Conn, error)
 
 type DialerOpts struct {
-	Dial              DialFN
+	Dial              func(ctx context.Context, network, addr string) (net.Conn, error)
 	PoolSize          int
 	BufferSize        int
 	KeepAliveInterval time.Duration
@@ -52,7 +52,7 @@ func Dialer(opts *DialerOpts) DialFN {
 	return d.Dial
 }
 
-func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, error) {
+func (d *dialer) Dial(ctx context.Context, network, addr string) (Conn, error) {
 	d.mx.Lock()
 	defer d.mx.Unlock()
 
@@ -97,6 +97,7 @@ func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, erro
 
 	return &cmconn{
 		Conn:    stream,
+		cs:      cs,
 		onClose: cs.closeIfNecessary,
 	}, nil
 }

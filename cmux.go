@@ -14,8 +14,14 @@ var (
 	defaultBufferSize = 4194304
 )
 
+type Conn interface {
+	net.Conn
+	Closed() bool
+}
+
 type cmconn struct {
 	net.Conn
+	cs      *connAndSession
 	onClose func()
 	closed  bool
 	mx      sync.Mutex
@@ -31,4 +37,11 @@ func (c *cmconn) Close() error {
 	c.onClose()
 	c.closed = true
 	return err
+}
+
+func (c *cmconn) Closed() bool {
+	c.mx.Lock()
+	closed := c.closed
+	c.mx.Unlock()
+	return closed || c.cs.session.IsClosed()
 }
