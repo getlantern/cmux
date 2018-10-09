@@ -64,7 +64,6 @@ func (l *listener) listen() {
 }
 
 func (l *listener) handleConn(conn net.Conn) {
-	l.mx.Lock()
 	smuxConfig := smux.DefaultConfig()
 	smuxConfig.MaxReceiveBuffer = l.BufferSize
 	if l.KeepAliveInterval > 0 {
@@ -73,9 +72,9 @@ func (l *listener) handleConn(conn net.Conn) {
 	session, err := smux.Server(conn, smuxConfig)
 	if err != nil {
 		l.nextErr <- err
-		l.mx.Unlock()
 		return
 	}
+	l.mx.Lock()
 	sessionID := l.nextSessionID
 	l.nextSessionID++
 	l.sessions[sessionID] = session
