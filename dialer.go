@@ -17,6 +17,7 @@ type DialerOpts struct {
 	PoolSize          int
 	BufferSize        int
 	KeepAliveInterval time.Duration
+	KeepAliveTimeout  time.Duration
 }
 
 type connAndSession struct {
@@ -110,6 +111,9 @@ func (d *dialer) connect(ctx context.Context, network, addr string, idx int) (*c
 	smuxConfig.MaxReceiveBuffer = d.BufferSize
 	if d.KeepAliveInterval > 0 {
 		smuxConfig.KeepAliveInterval = d.KeepAliveInterval
+	}
+	if d.KeepAliveTimeout > 0 {
+		smuxConfig.KeepAliveTimeout = d.KeepAliveTimeout
 	}
 	session, err := smux.Client(conn, smuxConfig)
 	if err != nil {
