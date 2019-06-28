@@ -4,14 +4,18 @@ package cmux
 
 import (
 	"net"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/getlantern/golog"
+	"github.com/pkg/errors"
 )
 
 var (
 	log               = golog.LoggerFor("cmux")
 	defaultBufferSize = 4194304
+	errTimeout        = &timeoutError{}
 )
 
 type cmconn struct {
@@ -30,5 +34,48 @@ func (c *cmconn) Close() error {
 	err := c.Conn.Close()
 	c.onClose()
 	c.closed = true
-	return err
+	return translateSmuxErr(err)
 }
+
+func (c *cmconn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	return n, translateSmuxErr(err)
+}
+
+func (c *cmconn) Write(b []byte) (int, error) {
+	n, err := c.Conn.Write(b)
+	return n, translateSmuxErr(err)
+}
+
+func (c *cmconn) SetDeadline(t time.Time) error {
+	return translateSmuxErr(c.Conn.SetDeadline(t))
+}
+
+func (c *cmconn) SetReadDeadline(t time.Time) error {
+	return translateSmuxErr(c.Conn.SetReadDeadline(t))
+}
+
+func (c *cmconn) SetWriteDeadline(t time.Time) error {
+	return translateSmuxErr(c.Conn.SetWriteDeadline(t))
+}
+
+func translateSmuxErr(err error) error {
+	err = errors.Cause(err)
+	if err == nil {
+		return err
+	} else if _, ok := err.(net.Error); ok {
+		return err
+	} else if strings.Contains(err.Error(), "timeout") { // certain newer versions
+		return errTimeout
+	} else {
+		return err
+	}
+}
+
+var _ net.Error = &timeoutError{}
+
+type timeoutError struct{}
+
+func (e *timeoutError) Error() string   { return "i/o timeout" }
+func (e *timeoutError) Timeout() bool   { return true }
+func (e *timeoutError) Temporary() bool { return true }

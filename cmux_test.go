@@ -12,7 +12,9 @@ import (
 
 	"github.com/getlantern/fdcount"
 	"github.com/getlantern/keyman"
+	"github.com/getlantern/netx"
 	"github.com/stretchr/testify/assert"
+	"github.com/xtaci/smux"
 )
 
 func TestRoundTrip(t *testing.T) {
@@ -183,4 +185,51 @@ func TestClose(t *testing.T) {
 	n, writeErr := c.Write(b)
 	assert.Error(t, writeErr)
 	assert.Equal(t, 0, n)
+}
+
+func TestErrorShape(t *testing.T) {
+	_l, err := net.Listen("tcp", "localhost:0")
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	l := Listen(&ListenOpts{Listener: _l})
+	_, _, err = fdcount.Matching("TCP")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dialer := &net.Dialer{}
+	dial := Dialer(&DialerOpts{Dial: dialer.DialContext, PoolSize: 1})
+	c, err := dial(context.Background(), "tcp", l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sz := 2 * smux.DefaultConfig().MaxFrameSize
+	buf := make([]byte, sz)
+
+	// read that should time out
+	err = c.SetReadDeadline(time.Now().Add(-1 * time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Read(buf)
+	if !netx.IsTimeout(err) {
+		t.Fatalf("error was not a timeout: %v", err)
+	}
+	err = c.SetReadDeadline(time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// write that should time out
+	err = c.SetWriteDeadline(time.Now().Add(-1 * time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Write(buf)
+	if !netx.IsTimeout(err) {
+		t.Fatalf("error was not a timeout: %v", err)
+	}
 }
