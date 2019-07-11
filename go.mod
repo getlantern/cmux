@@ -14,6 +14,7 @@ require (
 	github.com/getlantern/hex v0.0.0-20190417191902-c6586a6fe0b7 // indirect
 	github.com/getlantern/hidden v0.0.0-20190325191715-f02dbb02be55 // indirect
 	github.com/getlantern/keyman v0.0.0-20180207174507-f55e7280e93a
+	github.com/getlantern/mockconn v0.0.0-20190708122800-637bd46d8034 // indirect
 	github.com/getlantern/mtime v0.0.0-20170117193331-ba114e4a82b0 // indirect
 	github.com/getlantern/netx v0.0.0-20190110220209-9912de6f94fd
 	github.com/getlantern/ops v0.0.0-20190325191751-d70cb0d6f85f // indirect
@@ -21,5 +22,5 @@ require (
 	github.com/oxtoacart/bpool v0.0.0-20190530202638-03653db5a59c // indirect
 	github.com/pkg/errors v0.8.1
 	github.com/stretchr/testify v1.3.0
-	github.com/xtaci/smux v1.3.3
+	github.com/xtaci/smux v1.3.4
 )
