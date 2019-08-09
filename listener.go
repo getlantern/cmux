@@ -120,8 +120,8 @@ func (l *listener) Accept() (net.Conn, error) {
 
 func (l *listener) Close() error {
 	l.mx.Lock()
-	defer l.mx.Unlock()
 	if l.closed {
+		l.mx.Unlock()
 		return nil
 	}
 	for _, session := range l.sessions {
@@ -131,6 +131,7 @@ func (l *listener) Close() error {
 		}
 	}
 	l.closed = true
+	l.mx.Unlock()
 	err := l.Listener.Close()
 	// Drain nextConn and nextErr
 drain:
