@@ -138,7 +138,10 @@ drain:
 		select {
 		case conn := <-l.nextConn:
 			conn.Close()
-		case <-l.nextErr:
+		case _, ok := <-l.nextErr:
+			if !ok {
+				break drain
+			}
 		default:
 			break drain
 		}
