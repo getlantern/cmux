@@ -229,7 +229,11 @@ func TestErrorShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = c.Write(buf)
-	if !netx.IsTimeout(err) {
-		t.Fatalf("error was not a timeout: %v", err)
-	}
+	// This doesn't behave reliably as frames can be delivered to
+	// the session even if deadline expires. See
+	// https://github.com/xtaci/smux/blob/master/session.go#L441
+	//
+	// if !netx.IsTimeout(err) {
+	// 	t.Fatalf("error was not a timeout: %v", err)
+	// }
 }
