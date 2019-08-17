@@ -26,7 +26,8 @@ type listener struct {
 	nextErr               chan error
 	sessions              map[int]*smux.Session
 	nextSessionID         int
-	closed                bool
+	closeOnce             sync.Once
+	chClosed              chan struct{}
 	numConnections        int64
 	numVirtualConnections int64
 	mx                    sync.Mutex
@@ -43,6 +44,7 @@ func Listen(opts *ListenOpts) net.Listener {
 		nextConn:   make(chan net.Conn, 1000),
 		nextErr:    make(chan error, 1),
 		sessions:   make(map[int]*smux.Session),
+		chClosed:   make(chan struct{}),
 	}
 	go l.listen()
 	go l.logStats()
@@ -51,7 +53,6 @@ func Listen(opts *ListenOpts) net.Listener {
 
 func (l *listener) listen() {
 	defer l.Close()
-	defer close(l.nextErr)
 	for {
 		conn, err := l.Listener.Accept()
 		if err != nil {
@@ -105,46 +106,37 @@ func (l *listener) handleConn(conn net.Conn) {
 
 func (l *listener) Accept() (net.Conn, error) {
 	select {
-	case conn, ok := <-l.nextConn:
-		if !ok {
-			return nil, ErrClosed
-		}
+	case <-l.chClosed:
+		return nil, ErrClosed
+	case conn := <-l.nextConn:
 		return conn, nil
-	case err, ok := <-l.nextErr:
-		if !ok {
-			return nil, ErrClosed
-		}
+	case err := <-l.nextErr:
 		return nil, err
 	}
 }
 
-func (l *listener) Close() error {
-	l.mx.Lock()
-	defer l.mx.Unlock()
-	if l.closed {
-		return nil
-	}
-	for _, session := range l.sessions {
-		closeErr := session.Close()
-		if closeErr != nil {
-			log.Errorf("Error closing session: %v", closeErr)
+func (l *listener) Close() (err error) {
+	l.closeOnce.Do(func() {
+		close(l.chClosed)
+		for _, session := range l.sessions {
+			closeErr := session.Close()
+			if closeErr != nil {
+				log.Errorf("Error closing session: %v", closeErr)
+			}
 		}
-	}
-	l.closed = true
-	err := l.Listener.Close()
-	// Drain nextConn and nextErr
-drain:
-	for {
-		select {
-		case conn := <-l.nextConn:
-			conn.Close()
-		case <-l.nextErr:
-		default:
-			break drain
+		err = l.Listener.Close()
+		// Drain nextConn and nextErr
+		for {
+			select {
+			case conn := <-l.nextConn:
+				conn.Close()
+			case <-l.nextErr:
+			default:
+				return
+			}
 		}
-	}
-	close(l.nextConn)
-	return err
+	})
+	return
 }
 
 func (l *listener) Addr() net.Addr {
@@ -156,13 +148,13 @@ func (l *listener) cmconnClosed() {
 }
 
 func (l *listener) logStats() {
+	t := time.NewTicker(5 * time.Second)
+	defer t.Stop()
 	for {
-		time.Sleep(5 * time.Second)
-		log.Debugf("Connections: %d   Virtual: %d", atomic.LoadInt64(&l.numConnections), atomic.LoadInt64(&l.numVirtualConnections))
-		l.mx.Lock()
-		closed := l.closed
-		l.mx.Unlock()
-		if closed {
+		select {
+		case <-t.C:
+			log.Debugf("Connections: %d   Virtual: %d", atomic.LoadInt64(&l.numConnections), atomic.LoadInt64(&l.numVirtualConnections))
+		case <-l.chClosed:
 			log.Debug("Done logging stats")
 			return
 		}
