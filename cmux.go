@@ -4,12 +4,11 @@ package cmux
 
 import (
 	"net"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/getlantern/golog"
-	"github.com/pkg/errors"
+	"github.com/xtaci/smux"
 )
 
 var (
@@ -60,12 +59,7 @@ func (c *cmconn) SetWriteDeadline(t time.Time) error {
 }
 
 func translateSmuxErr(err error) error {
-	err = errors.Cause(err)
-	if err == nil {
-		return err
-	} else if _, ok := err.(net.Error); ok {
-		return err
-	} else if strings.Contains(err.Error(), "timeout") { // certain newer versions
+	if err == smux.ErrTimeout {
 		return errTimeout
 	} else {
 		return err
