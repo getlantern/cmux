@@ -15,5 +15,5 @@ require (
 	github.com/getlantern/netx v0.0.0-20190110220209-9912de6f94fd
 	github.com/pkg/errors v0.8.1
 	github.com/stretchr/testify v1.3.0
-	github.com/xtaci/smux v1.3.4
+	github.com/xtaci/smux v1.5.10
 )
