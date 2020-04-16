@@ -2,6 +2,7 @@ package cmux
 
 import (
 	"context"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -85,6 +86,10 @@ func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, erro
 	stream, err := cs.session.OpenStream()
 	if err != nil {
 		// Reconnect and try again
+		if err != io.EOF && err != io.ErrClosedPipe {
+			log.Debugf("Unexpected error, close existing session before reconnecting: %v", err)
+			cs.session.Close()
+		}
 		cs, err := d.connect(ctx, network, addr, idx)
 		if err != nil {
 			return nil, err
