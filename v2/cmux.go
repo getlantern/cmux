@@ -8,20 +8,22 @@ import (
 	"time"
 
 	"github.com/getlantern/golog"
-	"github.com/xtaci/smux"
 )
 
 var (
-	log               = golog.LoggerFor("cmux")
-	defaultBufferSize = 4194304
-	errTimeout        = &timeoutError{}
+	log             = golog.LoggerFor("cmux")
+	ErrTimeout      = &timeoutError{}
+	defaultProtocol = NewSmuxProtocol()
 )
+
+type ErrorMapperFn func(error) error
 
 type cmconn struct {
 	net.Conn
-	onClose func()
-	closed  bool
-	mx      sync.Mutex
+	onClose         func()
+	closed          bool
+	mx              sync.Mutex
+	translateErrors ErrorMapperFn
 }
 
 func (c *cmconn) Close() error {
@@ -33,37 +35,29 @@ func (c *cmconn) Close() error {
 	err := c.Conn.Close()
 	c.onClose()
 	c.closed = true
-	return translateSmuxErr(err)
+	return c.translateErrors(err)
 }
 
 func (c *cmconn) Read(b []byte) (int, error) {
 	n, err := c.Conn.Read(b)
-	return n, translateSmuxErr(err)
+	return n, c.translateErrors(err)
 }
 
 func (c *cmconn) Write(b []byte) (int, error) {
 	n, err := c.Conn.Write(b)
-	return n, translateSmuxErr(err)
+	return n, c.translateErrors(err)
 }
 
 func (c *cmconn) SetDeadline(t time.Time) error {
-	return translateSmuxErr(c.Conn.SetDeadline(t))
+	return c.translateErrors(c.Conn.SetDeadline(t))
 }
 
 func (c *cmconn) SetReadDeadline(t time.Time) error {
-	return translateSmuxErr(c.Conn.SetReadDeadline(t))
+	return c.translateErrors(c.Conn.SetReadDeadline(t))
 }
 
 func (c *cmconn) SetWriteDeadline(t time.Time) error {
-	return translateSmuxErr(c.Conn.SetWriteDeadline(t))
-}
-
-func translateSmuxErr(err error) error {
-	if err == smux.ErrTimeout {
-		return errTimeout
-	} else {
-		return err
-	}
+	return c.translateErrors(c.Conn.SetWriteDeadline(t))
 }
 
 var _ net.Error = &timeoutError{}
@@ -73,3 +67,16 @@ type timeoutError struct{}
 func (e *timeoutError) Error() string   { return "i/o timeout" }
 func (e *timeoutError) Timeout() bool   { return true }
 func (e *timeoutError) Temporary() bool { return true }
+
+type Session interface {
+	OpenStream() (net.Conn, error)
+	AcceptStream() (net.Conn, error)
+	Close() error
+	NumStreams() int
+}
+
+type Protocol interface {
+	Client(net.Conn, *DialerOpts) (Session, error)
+	Server(net.Conn, *ListenOpts) (Session, error)
+	ErrorMapper() ErrorMapperFn
+}

@@ -5,25 +5,20 @@ import (
 	"io"
 	"net"
 	"sync"
-	"time"
-
-	"github.com/xtaci/smux"
 )
 
 // DialFN is a function that dials like net.DialContext.
 type DialFN func(ctx context.Context, network, addr string) (net.Conn, error)
 
 type DialerOpts struct {
-	Dial              DialFN
-	PoolSize          int
-	BufferSize        int
-	KeepAliveInterval time.Duration
-	KeepAliveTimeout  time.Duration
+	Dial     DialFN
+	PoolSize int
+	Protocol Protocol
 }
 
 type connAndSession struct {
 	conn    net.Conn
-	session *smux.Session
+	session Session
 	dialer  *dialer
 	addr    string
 	idx     int
@@ -45,8 +40,8 @@ func Dialer(opts *DialerOpts) DialFN {
 	if opts.PoolSize < 1 {
 		opts.PoolSize = 1
 	}
-	if opts.BufferSize <= 0 {
-		opts.BufferSize = defaultBufferSize
+	if opts.Protocol == nil {
+		opts.Protocol = defaultProtocol
 	}
 	d := &dialer{
 		DialerOpts: *opts,
@@ -102,8 +97,9 @@ func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, erro
 	}
 
 	return &cmconn{
-		Conn:    stream,
-		onClose: cs.closeIfNecessary,
+		Conn:            stream,
+		onClose:         cs.closeIfNecessary,
+		translateErrors: d.Protocol.ErrorMapper(),
 	}, nil
 }
 
@@ -112,15 +108,8 @@ func (d *dialer) connect(ctx context.Context, network, addr string, idx int) (*c
 	if err != nil {
 		return nil, err
 	}
-	smuxConfig := smux.DefaultConfig()
-	smuxConfig.MaxReceiveBuffer = d.BufferSize
-	if d.KeepAliveInterval > 0 {
-		smuxConfig.KeepAliveInterval = d.KeepAliveInterval
-	}
-	if d.KeepAliveTimeout > 0 {
-		smuxConfig.KeepAliveTimeout = d.KeepAliveTimeout
-	}
-	session, err := smux.Client(conn, smuxConfig)
+
+	session, err := d.Protocol.Client(conn, &d.DialerOpts)
 	if err != nil {
 		return nil, err
 	}
