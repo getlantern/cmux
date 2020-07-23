@@ -13,17 +13,17 @@ import (
 var (
 	log             = golog.LoggerFor("cmux")
 	ErrTimeout      = &timeoutError{}
-	defaultProtocol = NewSmuxProtocol()
+	defaultProtocol = NewSmuxProtocol(nil)
 )
 
 type ErrorMapperFn func(error) error
 
 type cmconn struct {
 	net.Conn
-	onClose         func()
-	closed          bool
-	mx              sync.Mutex
-	translateErrors ErrorMapperFn
+	onClose        func()
+	closed         bool
+	mx             sync.Mutex
+	translateError ErrorMapperFn
 }
 
 func (c *cmconn) Close() error {
@@ -35,29 +35,29 @@ func (c *cmconn) Close() error {
 	err := c.Conn.Close()
 	c.onClose()
 	c.closed = true
-	return c.translateErrors(err)
+	return c.translateError(err)
 }
 
 func (c *cmconn) Read(b []byte) (int, error) {
 	n, err := c.Conn.Read(b)
-	return n, c.translateErrors(err)
+	return n, c.translateError(err)
 }
 
 func (c *cmconn) Write(b []byte) (int, error) {
 	n, err := c.Conn.Write(b)
-	return n, c.translateErrors(err)
+	return n, c.translateError(err)
 }
 
 func (c *cmconn) SetDeadline(t time.Time) error {
-	return c.translateErrors(c.Conn.SetDeadline(t))
+	return c.translateError(c.Conn.SetDeadline(t))
 }
 
 func (c *cmconn) SetReadDeadline(t time.Time) error {
-	return c.translateErrors(c.Conn.SetReadDeadline(t))
+	return c.translateError(c.Conn.SetReadDeadline(t))
 }
 
 func (c *cmconn) SetWriteDeadline(t time.Time) error {
-	return c.translateErrors(c.Conn.SetWriteDeadline(t))
+	return c.translateError(c.Conn.SetWriteDeadline(t))
 }
 
 var _ net.Error = &timeoutError{}
@@ -76,7 +76,7 @@ type Session interface {
 }
 
 type Protocol interface {
-	Client(net.Conn, *DialerOpts) (Session, error)
-	Server(net.Conn, *ListenOpts) (Session, error)
-	ErrorMapper() ErrorMapperFn
+	Client(net.Conn) (Session, error)
+	Server(net.Conn) (Session, error)
+	TranslateError(error) error
 }

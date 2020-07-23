@@ -62,7 +62,7 @@ func (l *listener) listen() {
 }
 
 func (l *listener) handleConn(conn net.Conn) {
-	session, err := l.Protocol.Server(conn, &l.ListenOpts)
+	session, err := l.Protocol.Server(conn)
 	if err != nil {
 		l.nextErr <- err
 		return
@@ -90,9 +90,9 @@ func (l *listener) handleConn(conn net.Conn) {
 		}
 		atomic.AddInt64(&l.numVirtualConnections, 1)
 		l.nextConn <- &cmconn{
-			Conn:            stream,
-			onClose:         l.cmconnClosed,
-			translateErrors: l.Protocol.ErrorMapper(),
+			Conn:           stream,
+			onClose:        l.cmconnClosed,
+			translateError: l.Protocol.TranslateError,
 		}
 	}
 }

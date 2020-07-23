@@ -97,9 +97,9 @@ func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, erro
 	}
 
 	return &cmconn{
-		Conn:            stream,
-		onClose:         cs.closeIfNecessary,
-		translateErrors: d.Protocol.ErrorMapper(),
+		Conn:           stream,
+		onClose:        cs.closeIfNecessary,
+		translateError: d.Protocol.TranslateError,
 	}, nil
 }
 
@@ -109,7 +109,7 @@ func (d *dialer) connect(ctx context.Context, network, addr string, idx int) (*c
 		return nil, err
 	}
 
-	session, err := d.Protocol.Client(conn, &d.DialerOpts)
+	session, err := d.Protocol.Client(conn)
 	if err != nil {
 		return nil, err
 	}
