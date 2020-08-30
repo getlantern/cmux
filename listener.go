@@ -118,6 +118,8 @@ func (l *listener) Accept() (net.Conn, error) {
 func (l *listener) Close() (err error) {
 	l.closeOnce.Do(func() {
 		close(l.chClosed)
+		l.mx.Lock()
+		defer l.mx.Unlock()
 		for _, session := range l.sessions {
 			closeErr := session.Close()
 			if closeErr != nil {
