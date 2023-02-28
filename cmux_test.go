@@ -10,11 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/xtaci/smux"
+
 	"github.com/getlantern/fdcount"
 	"github.com/getlantern/keyman"
 	"github.com/getlantern/netx"
-	"github.com/stretchr/testify/assert"
-	"github.com/xtaci/smux"
 )
 
 func TestRoundTrip(t *testing.T) {
@@ -51,6 +53,7 @@ func TestRoundTrip(t *testing.T) {
 				log.Error(acceptErr)
 				return
 			}
+			require.IsType(t, &tls.Conn{}, conn.(*cmconn).Wrapped())
 			// Start echoing
 			go func() {
 				io.Copy(conn, conn)
@@ -78,6 +81,7 @@ func TestRoundTrip(t *testing.T) {
 		return
 	}
 	defer c1.Close()
+	require.IsType(t, &tls.Conn{}, c1.(*cmconn).Wrapped())
 	assert.NoError(t, fdc.AssertDelta(3), "Dialing connection 1 should have added one underlying connection (one file descriptor for each end of connection)")
 	assert.EqualValues(t, 1, atomic.LoadInt64(&l.numConnections))
 	assert.EqualValues(t, 1, atomic.LoadInt64(&l.numVirtualConnections))

@@ -102,8 +102,9 @@ func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, erro
 	}
 
 	return &cmconn{
-		Conn:    stream,
-		onClose: cs.closeIfNecessary,
+		Conn:        stream,
+		wrappedConn: cs.conn,
+		onClose:     cs.closeIfNecessary,
 	}, nil
 }
 

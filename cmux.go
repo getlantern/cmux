@@ -7,8 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getlantern/golog"
 	"github.com/xtaci/smux"
+
+	"github.com/getlantern/golog"
 )
 
 var (
@@ -19,9 +20,14 @@ var (
 
 type cmconn struct {
 	net.Conn
-	onClose func()
-	closed  bool
-	mx      sync.Mutex
+	wrappedConn net.Conn
+	onClose     func()
+	closed      bool
+	mx          sync.Mutex
+}
+
+func (c *cmconn) Wrapped() net.Conn {
+	return c.wrappedConn
 }
 
 func (c *cmconn) Close() error {

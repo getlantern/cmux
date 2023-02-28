@@ -20,10 +20,15 @@ type ErrorMapperFn func(error) error
 
 type cmconn struct {
 	net.Conn
+	wrappedConn    net.Conn
 	onClose        func()
 	closed         bool
 	mx             sync.Mutex
 	translateError ErrorMapperFn
+}
+
+func (c *cmconn) Wrapped() net.Conn {
+	return c.wrappedConn
 }
 
 func (c *cmconn) Close() error {
