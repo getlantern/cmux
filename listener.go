@@ -98,8 +98,9 @@ func (l *listener) handleConn(conn net.Conn) {
 		}
 		atomic.AddInt64(&l.numVirtualConnections, 1)
 		l.nextConn <- &cmconn{
-			Conn:    stream,
-			onClose: l.cmconnClosed,
+			Conn:        stream,
+			wrappedConn: conn,
+			onClose:     l.cmconnClosed,
 		}
 	}
 }

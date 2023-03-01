@@ -10,10 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/getlantern/fdcount"
 	"github.com/getlantern/keyman"
 	"github.com/getlantern/netx"
-	"github.com/stretchr/testify/assert"
 )
 
 func RunRoundTripTest(proto Protocol, t *testing.T) {
@@ -50,6 +52,7 @@ func RunRoundTripTest(proto Protocol, t *testing.T) {
 				log.Error(acceptErr)
 				return
 			}
+			require.IsType(t, &tls.Conn{}, conn.(*cmconn).Wrapped())
 			// Start echoing
 			go func() {
 				io.Copy(conn, conn)
@@ -77,6 +80,7 @@ func RunRoundTripTest(proto Protocol, t *testing.T) {
 		return
 	}
 	defer c1.Close()
+	require.IsType(t, &tls.Conn{}, c1.(*cmconn).Wrapped())
 	_, err = c1.Write([]byte("c1"))
 	if !assert.NoError(t, err) {
 		return
