@@ -33,13 +33,16 @@ func (c *cmconn) Wrapped() net.Conn {
 
 func (c *cmconn) Close() error {
 	c.mx.Lock()
-	defer c.mx.Unlock()
-	if c.closed {
+	isClosed := c.closed
+	c.mx.Unlock()
+	if isClosed {
 		return nil
 	}
 	err := c.Conn.Close()
 	c.onClose()
+	c.mx.Lock()
 	c.closed = true
+	c.mx.Unlock()
 	return c.translateError(err)
 }
 
