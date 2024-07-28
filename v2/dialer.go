@@ -2,6 +2,7 @@ package cmux
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"sync"
@@ -50,6 +51,11 @@ func Dialer(opts *DialerOpts) DialFN {
 }
 
 func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, error) {
+	if d == nil {
+		log.Debug("d is nil..")
+		return nil, errors.New("nil dialer")
+	}
+
 	d.mx.Lock()
 	defer d.mx.Unlock()
 
