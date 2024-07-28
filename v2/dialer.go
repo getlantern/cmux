@@ -51,10 +51,8 @@ func Dialer(opts *DialerOpts) DialFN {
 
 func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, error) {
 	d.mx.Lock()
-
 	idx := d.currentConnID % d.PoolSize
 	d.currentConnID++
-
 	var cs *connAndSession
 
 	// Create pool if necessary
@@ -65,16 +63,17 @@ func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, erro
 	} else {
 		cs = conns[idx]
 	}
-
+	d.mx.Unlock()
 	// Create conn if necessary
 	if cs == nil {
 		var err error
 		cs, err = d.connect(ctx, network, addr, idx)
 		if err != nil {
-			d.mx.Unlock()
 			return nil, err
 		}
+		d.mx.Lock()
 		conns[idx] = cs
+		d.mx.Unlock()
 	}
 
 	// Open stream
@@ -87,17 +86,16 @@ func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, erro
 		}
 		cs, err := d.connect(ctx, network, addr, idx)
 		if err != nil {
-			d.mx.Unlock()
 			return nil, err
 		}
 		stream, err = cs.session.OpenStream()
 		if err != nil {
-			d.mx.Unlock()
 			return nil, err
 		}
+		d.mx.Lock()
 		conns[idx] = cs
+		d.mx.Unlock()
 	}
-	d.mx.Unlock()
 
 	return &cmconn{
 		Conn:           stream,
