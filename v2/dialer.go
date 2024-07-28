@@ -2,7 +2,6 @@ package cmux
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net"
 	"sync"
@@ -51,13 +50,7 @@ func Dialer(opts *DialerOpts) DialFN {
 }
 
 func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, error) {
-	if d == nil {
-		log.Debug("d is nil..")
-		return nil, errors.New("nil dialer")
-	}
-
 	d.mx.Lock()
-	defer d.mx.Unlock()
 
 	idx := d.currentConnID % d.PoolSize
 	d.currentConnID++
@@ -78,6 +71,7 @@ func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, erro
 		var err error
 		cs, err = d.connect(ctx, network, addr, idx)
 		if err != nil {
+			d.mx.Unlock()
 			return nil, err
 		}
 		conns[idx] = cs
@@ -93,14 +87,17 @@ func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, erro
 		}
 		cs, err := d.connect(ctx, network, addr, idx)
 		if err != nil {
+			d.mx.Unlock()
 			return nil, err
 		}
 		stream, err = cs.session.OpenStream()
 		if err != nil {
+			d.mx.Unlock()
 			return nil, err
 		}
 		conns[idx] = cs
 	}
+	d.mx.Unlock()
 
 	return &cmconn{
 		Conn:           stream,
