@@ -18,6 +18,10 @@ var (
 
 type ErrorMapperFn func(error) error
 
+func SetLogger(logger golog.Logger) {
+	log = logger
+}
+
 type cmconn struct {
 	net.Conn
 	wrappedConn    net.Conn
